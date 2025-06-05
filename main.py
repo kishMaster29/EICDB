@@ -21,7 +21,7 @@ SHELF_LIFE_HOURS = {
 
 yolo_model = YOLO('yolov8n.pt')
 
-cred = credentials.Certificate("fruitmonitorapp-firebase-adminsdk-fbsvc-57c4128c52.json")
+cred = credentials.Certificate("/etc/secrets/fruitmonitorapp-firebase-adminsdk-fbsvc-57c4128c52.json")
 firebase_admin.initialize_app(cred)
 
 def send_fcm_alert(token: str, title: str, body: str):
