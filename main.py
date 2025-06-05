@@ -7,9 +7,11 @@ from flask import Flask, request, jsonify
 from PIL import Image
 from datetime import datetime, timezone
 from ultralytics import YOLO
+import logging
 
 app = Flask(__name__)
 os.makedirs("uploads", exist_ok=True)
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 REGISTERED_TOKENS = set()
 
@@ -70,18 +72,18 @@ def upload_image():
 
 def process_image(path):
     image = Image.open(path).convert('RGB')
-    print("[INFO] Image loaded")
+    logging.info("Image loaded")
 
     now = datetime.now(timezone.utc)
     now_unix = int(now.timestamp())
 
     # YOLO detection
     results = yolo_model.predict(image, imgsz=640, conf=0.25)
-    print("[INFO] YOLO prediction done")
+    logging.info("YOLO prediction done")
     detections = results[0].boxes.data.cpu().numpy()
     names = results[0].names
 
-    print(f"[INFO] Begin Processing")
+    logging.info("Begin Processing")
 
     # Analyze detections
     current_counts = {}
@@ -130,12 +132,13 @@ def process_image(path):
                 readable_ts = datetime.fromtimestamp(ts, timezone.utc).date().isoformat() + "Z"
                 alerts.append(f"Spoilage alert: {fruit} from {readable_ts} (>{shelf_life}h)")
 
+    logging.info(alerts)
     # Send all alerts via FCM
     for alert in alerts:
         for token in REGISTERED_TOKENS:
             send_fcm_alert(token, "Inventory Update", alert)
 
-    print("[DONE] Processing completed. Alerts sent.")
+    logging.info("Processing completed. Alerts sent.")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
