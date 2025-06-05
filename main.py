@@ -1,4 +1,6 @@
 import os
+import threading
+import uuid
 import firebase_admin
 from firebase_admin import messaging, credentials
 from flask import Flask, request, jsonify
@@ -57,8 +59,16 @@ def upload_image():
         return jsonify({'error': 'No image provided'}), 400
 
     file = request.files['image']
-    image = Image.open(BytesIO(file.read())).convert('RGB')
+    filename = f"{uuid.uuid4()}.jpg"
+    path = os.path.join("uploads", filename)
+    file.save(path)
 
+    threading.Thread(target=process_image, args=(path,)).start()
+
+    return jsonify({'status': 'image received, processing'}), 202
+
+def process_image(path):
+    image = Image.open(path).convert('RGB')
     now = datetime.utcnow()
     now_iso = now.isoformat() + "Z"
 
@@ -117,8 +127,6 @@ def upload_image():
     for alert in alerts:
         for token in REGISTERED_TOKENS:
             send_fcm_alert(token, "Inventory Update", alert)
-
-    return jsonify({"status": "processed", "alerts_sent": alerts})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
