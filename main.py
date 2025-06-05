@@ -70,13 +70,17 @@ def upload_image():
 
 def process_image(path):
     image = Image.open(path).convert('RGB')
+    print("[INFO] Image loaded")
     now = datetime.utcnow()
     now_iso = now.isoformat() + "Z"
 
     # YOLO detection
     results = yolo_model.predict(image, imgsz=640, conf=0.25)
+    print("[INFO] YOLO prediction done")
     detections = results[0].boxes.data.cpu().numpy()
     names = results[0].names
+
+    print(f"[INFO] Begin Processing")
 
     # Analyze detections
     current_counts = {}
@@ -128,6 +132,8 @@ def process_image(path):
     for alert in alerts:
         for token in REGISTERED_TOKENS:
             send_fcm_alert(token, "Inventory Update", alert)
+
+    print("[DONE] Processing completed. Alerts sent.")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
