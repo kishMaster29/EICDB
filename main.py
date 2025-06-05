@@ -10,6 +10,7 @@ from datetime import datetime
 from ultralytics import YOLO
 
 app = Flask(__name__)
+os.makedirs("uploads", exist_ok=True)
 
 REGISTERED_TOKENS = set()
 
