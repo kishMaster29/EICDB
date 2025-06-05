@@ -46,6 +46,7 @@ def register_token():
     token = data.get("token")
     if token:
         REGISTERED_TOKENS.add(token)
+        logging.info(f"Received token: {token}")
         return jsonify({"status": "registered"}), 200
     return jsonify({"error": "no token"}), 400
 
