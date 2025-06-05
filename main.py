@@ -67,11 +67,13 @@ def upload_image():
 
     return jsonify({'status': 'image received, processing'}), 202
 
+
 def process_image(path):
     image = Image.open(path).convert('RGB')
     print("[INFO] Image loaded")
+
     now = datetime.now(timezone.utc)
-    now_iso = now.isoformat() + "Z"
+    now_unix = int(now.timestamp())
 
     # YOLO detection
     results = yolo_model.predict(image, imgsz=640, conf=0.25)
@@ -103,14 +105,15 @@ def process_image(path):
 
         if count > old_count:
             added = count - old_count
-            INVENTORY[fruit]["timestamps"].extend([now_iso] * added)
+            INVENTORY[fruit]["timestamps"].extend([now_unix] * added)
             alerts.append(f"{added} more {fruit}(s) added (now {count})")
 
         elif count < old_count:
             removed = old_count - count
             removed_timestamps = INVENTORY[fruit]["timestamps"][:removed]
             INVENTORY[fruit]["timestamps"] = INVENTORY[fruit]["timestamps"][removed:]
-            alerts.append(f"{removed} {fruit}(s) removed — choose one of: {removed_timestamps}")
+            readable_times = [datetime.fromtimestamp(ts, timezone.utc).date().isoformat() for ts in removed_timestamps]
+            alerts.append(f"{removed} {fruit}(s) removed — choose one of: {readable_times}")
 
     # Check for completely removed items
     for fruit in list(previous_inventory.keys()):
@@ -121,11 +124,11 @@ def process_image(path):
     # Spoilage check
     for fruit, data in INVENTORY.items():
         for ts in data["timestamps"]:
-            ts_dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ")
-            hours_passed = (now - ts_dt).total_seconds() / 3600
+            hours_passed = (now_unix - ts) / 3600
             shelf_life = SHELF_LIFE_HOURS.get(fruit, float('inf'))
             if hours_passed > shelf_life:
-                alerts.append(f"Spoilage alert: {fruit} from {ts} (>{shelf_life}h)")
+                readable_ts = datetime.fromtimestamp(ts, timezone.utc).date().isoformat() + "Z"
+                alerts.append(f"Spoilage alert: {fruit} from {readable_ts} (>{shelf_life}h)")
 
     # Send all alerts via FCM
     for alert in alerts:
