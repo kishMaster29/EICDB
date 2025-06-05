@@ -5,8 +5,7 @@ import firebase_admin
 from firebase_admin import messaging, credentials
 from flask import Flask, request, jsonify
 from PIL import Image
-from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone
 from ultralytics import YOLO
 
 app = Flask(__name__)
@@ -71,7 +70,7 @@ def upload_image():
 def process_image(path):
     image = Image.open(path).convert('RGB')
     print("[INFO] Image loaded")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     now_iso = now.isoformat() + "Z"
 
     # YOLO detection
@@ -122,7 +121,7 @@ def process_image(path):
     # Spoilage check
     for fruit, data in INVENTORY.items():
         for ts in data["timestamps"]:
-            ts_dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            ts_dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ")
             hours_passed = (now - ts_dt).total_seconds() / 3600
             shelf_life = SHELF_LIFE_HOURS.get(fruit, float('inf'))
             if hours_passed > shelf_life:
