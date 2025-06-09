@@ -13,7 +13,9 @@ app = Flask(__name__)
 os.makedirs("uploads", exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-REGISTERED_TOKENS = set()
+cred = credentials.Certificate("/etc/secrets/fruitmonitorapp-firebase-adminsdk-fbsvc-57c4128c52.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 SHELF_LIFE_HOURS = {
     "banana": 72, "apple": 120, "grapes": 48, "pear": 50, "orange": 168,
@@ -36,6 +38,7 @@ SENSOR_DATA = {
 }
 
 Q10 = 2.0
+yolo_model = YOLO('yolov8n.pt')
 
 def environment_factor_q10(temp: float, humidity: float):
     temp_factor = Q10 ** ((temp - 4.0) / 10.0)
@@ -46,19 +49,7 @@ def estimate_rsl(fruit, timestamps, now_unix, temp, humidity):
     base_life = SHELF_LIFE_HOURS.get(fruit, 72)
     respiration = RESPIRATION_CONSTANTS.get(fruit, 1.0)
     env_factor = environment_factor_q10(temp, humidity)
-    rsl_list = []
-    for ts in timestamps:
-        hours_passed = (now_unix - ts) / 3600
-        adjusted_life = (base_life / respiration) / env_factor
-        remaining = max(0, adjusted_life - hours_passed)
-        rsl_list.append(remaining)
-    return rsl_list
-
-yolo_model = YOLO('yolov8n.pt')
-
-cred = credentials.Certificate("/etc/secrets/fruitmonitorapp-firebase-adminsdk-fbsvc-57c4128c52.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+    return [max(0, (base_life / respiration) / env_factor - (now_unix - ts) / 3600) for ts in timestamps]
 
 def send_fcm_alert(token: str, title: str, body: str):
     message = messaging.Message(
@@ -73,8 +64,12 @@ def register_token():
     data = request.get_json() or {}
     token = data.get("token")
     if token:
-        REGISTERED_TOKENS.add(token)
-        logging.info(f"Received token: {token}")
+        doc_ref = db.collection("app").document("tokens")
+        existing = doc_ref.get().to_dict() or {}
+        tokens = set(existing.get("tokens", []))
+        tokens.add(token)
+        doc_ref.set({"tokens": list(tokens)})
+        logging.info(f"Registered token: {token}")
         return jsonify({"status": "registered"}), 200
     return jsonify({"error": "no token"}), 400
 
@@ -121,9 +116,7 @@ def upload_image():
     filename = f"{uuid.uuid4()}.jpg"
     path = os.path.join("uploads", filename)
     file.save(path)
-
     threading.Thread(target=process_image, args=(path,)).start()
-
     return jsonify({'status': 'image received, processing'}), 202
 
 def process_image(path):
@@ -132,9 +125,7 @@ def process_image(path):
 
     now = datetime.now(timezone.utc)
     now_unix = int(now.timestamp())
-
     results = yolo_model.predict(image, imgsz=640, conf=0.25)
-    logging.info("YOLO prediction done")
     detections = results[0].boxes.data.cpu().numpy()
     names = results[0].names
 
@@ -185,13 +176,16 @@ def process_image(path):
 
     doc_ref.set(inventory_data)
 
-    logging.info(alerts)
+    token_doc = db.collection("app").document("tokens").get()
+    tokens = token_doc.to_dict().get("tokens", []) if token_doc.exists else []
+
     for alert in alerts:
-        for token in REGISTERED_TOKENS:
+        for token in tokens:
             send_fcm_alert(token, "Inventory Update", alert)
 
     logging.info("Processing completed. Alerts sent.")
 
+# Run app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
