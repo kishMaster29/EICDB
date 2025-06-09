@@ -38,7 +38,7 @@ SENSOR_DATA = {
 }
 
 Q10 = 2.0
-yolo_model = YOLO('yolov8n.pt')
+yolo_model = YOLO('models/yolov8n.pt')
 
 
 def environment_factor_q10(temp: float, humidity: float):
