@@ -40,16 +40,19 @@ SENSOR_DATA = {
 Q10 = 2.0
 yolo_model = YOLO('yolov8n.pt')
 
+
 def environment_factor_q10(temp: float, humidity: float):
     temp_factor = Q10 ** ((temp - 4.0) / 10.0)
     humidity_factor = 1.0 if humidity >= 60 else 0.85
     return temp_factor / humidity_factor
+
 
 def estimate_rsl(fruit, timestamps, now_unix, temp, humidity):
     base_life = SHELF_LIFE_HOURS.get(fruit, 72)
     respiration = RESPIRATION_CONSTANTS.get(fruit, 1.0)
     env_factor = environment_factor_q10(temp, humidity)
     return [max(0, (base_life / respiration) / env_factor - (now_unix - ts) / 3600) for ts in timestamps]
+
 
 def send_fcm_alert(token: str, title: str, body: str):
     message = messaging.Message(
@@ -58,6 +61,7 @@ def send_fcm_alert(token: str, title: str, body: str):
     )
     response = messaging.send(message)
     print("Sent via FCM HTTP v1:", response)
+
 
 @app.route('/register-token', methods=['POST'])
 def register_token():
@@ -73,6 +77,7 @@ def register_token():
         return jsonify({"status": "registered"}), 200
     return jsonify({"error": "no token"}), 400
 
+
 @app.route('/update-sensors', methods=['POST'])
 def update_sensors():
     data = request.get_json() or {}
@@ -85,6 +90,7 @@ def update_sensors():
         return jsonify({"status": "sensor data updated"}), 200
     except (TypeError, ValueError):
         return jsonify({"error": "invalid sensor values"}), 400
+
 
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
@@ -107,6 +113,7 @@ def get_inventory():
         }
     return jsonify(inventory_with_rsl)
 
+
 @app.route('/upload', methods=['POST'])
 def upload_image():
     if 'image' not in request.files:
@@ -118,6 +125,7 @@ def upload_image():
     file.save(path)
     threading.Thread(target=process_image, args=(path,)).start()
     return jsonify({'status': 'image received, processing'}), 202
+
 
 def process_image(path):
     image = Image.open(path).convert('RGB')
@@ -186,6 +194,12 @@ def process_image(path):
             send_fcm_alert(token, "Inventory Update", alert)
 
     logging.info("Processing completed. Alerts sent.")
+
+
+@app.route('/')
+def home():
+    return '✅ Fruit Monitor Server is running!'
+
 
 # Run app
 if __name__ == '__main__':
