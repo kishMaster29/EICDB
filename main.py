@@ -179,6 +179,8 @@ def process_image(path):
     token_doc = db.collection("app").document("tokens").get()
     tokens = token_doc.to_dict().get("tokens", []) if token_doc.exists else []
 
+    logging.info(tokens)
+
     for alert in alerts:
         for token in tokens:
             send_fcm_alert(token, "Inventory Update", alert)
