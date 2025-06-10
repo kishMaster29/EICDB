@@ -86,7 +86,7 @@ def send_fcm_alert(token: str, title: str, body: str):
         token=token
     )
     response = messaging.send(message)
-    print("Sent via FCM HTTP v1:", response)
+    logging.info("Sent via FCM HTTP v1:", response)
 
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
@@ -229,4 +229,5 @@ def home():
 # Run app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
+    logging.info(f"Binding to port {port}")
     app.run(host='0.0.0.0', port=port)
