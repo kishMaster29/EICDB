@@ -138,7 +138,7 @@ def process_image(path):
 
     now = datetime.now(timezone.utc)
     now_unix = int(now.timestamp())
-    results = yolo_model.predict(image, imgsz=640, conf=0.25)
+    results = yolo_model.predict(image, imgsz=512, conf=0.25)
     detections = results[0].boxes.data.cpu().numpy()
     names = results[0].names
 
