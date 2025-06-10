@@ -86,7 +86,7 @@ def send_fcm_alert(token: str, title: str, body: str):
         token=token
     )
     response = messaging.send(message)
-    logging.info("Sent via FCM HTTP v1:", response)
+    logging.info("Sent via FCM HTTP v1:" + response)
 
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
