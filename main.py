@@ -40,7 +40,6 @@ SENSOR_DATA = {
 Q10 = 2.0
 yolo_model = YOLO('models/yolov8n.pt')
 
-
 def environment_factor_q10(temp: float, humidity: float):
     temp_factor = Q10 ** ((temp - 4.0) / 10.0)
     humidity_factor = 1.0 if humidity >= 60 else 0.85
@@ -52,16 +51,6 @@ def estimate_rsl(fruit, timestamps, now_unix, temp, humidity):
     respiration = RESPIRATION_CONSTANTS.get(fruit, 1.0)
     env_factor = environment_factor_q10(temp, humidity)
     return [max(0, (base_life / respiration) / env_factor - (now_unix - ts) / 3600) for ts in timestamps]
-
-
-def send_fcm_alert(token: str, title: str, body: str):
-    message = messaging.Message(
-        notification=messaging.Notification(title=title, body=body),
-        token=token
-    )
-    response = messaging.send(message)
-    print("Sent via FCM HTTP v1:", response)
-
 
 @app.route('/register-token', methods=['POST'])
 def register_token():
@@ -77,7 +66,6 @@ def register_token():
         return jsonify({"status": "registered"}), 200
     return jsonify({"error": "no token"}), 400
 
-
 @app.route('/update-sensors', methods=['POST'])
 def update_sensors():
     data = request.get_json() or {}
@@ -92,27 +80,44 @@ def update_sensors():
         return jsonify({"error": "invalid sensor values"}), 400
 
 
+def send_fcm_alert(token: str, title: str, body: str):
+    message = messaging.Message(
+        notification=messaging.Notification(title=title, body=body),
+        token=token
+    )
+    response = messaging.send(message)
+    print("Sent via FCM HTTP v1:", response)
+
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
     doc = db.collection("inventory").document("current").get()
     data = doc.to_dict() or {}
+
+    logs_ref = db.collection("inventory_logs")
+    logs_docs = logs_ref.stream()
+
     now = int(datetime.now(timezone.utc).timestamp())
     temp = SENSOR_DATA["temperature"]
     humidity = SENSOR_DATA["humidity"]
 
-    inventory_with_rsl = {}
+    response = {}
+
     for fruit, entry in data.items():
         timestamps = entry.get("timestamps", [])[-100:]
         rsl_list = estimate_rsl(fruit, timestamps, now, temp, humidity)
-        inventory_with_rsl[fruit] = {
+        response[fruit] = {
             "timestamps": timestamps,
             "rsl_hours": [round(r, 1) for r in rsl_list],
             "average_rsl": round(sum(rsl_list) / len(rsl_list), 1) if rsl_list else None,
             "min_rsl": round(min(rsl_list), 1) if rsl_list else None,
             "count": len(rsl_list)
         }
-    return jsonify(inventory_with_rsl)
 
+    logs_data = {}
+    for log_doc in logs_docs:
+        logs_data[log_doc.id] = log_doc.to_dict().get("log", [])
+
+    return jsonify({"current": response, "logs": logs_data})
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
@@ -173,16 +178,38 @@ def process_image(path):
             alerts.append(f"All {fruit}s removed from inventory")
             inventory_data.pop(fruit, None)
 
+    doc_ref.set(inventory_data)
+
+    # log RSL to /inventory_logs/{fruit}
     temp = SENSOR_DATA["temperature"]
     humidity = SENSOR_DATA["humidity"]
+
     for fruit, data in inventory_data.items():
-        rsl_list = estimate_rsl(fruit, data["timestamps"], now_unix, temp, humidity)
+        timestamps = data.get("timestamps", [])
+        rsl_list = estimate_rsl(fruit, timestamps, now_unix, temp, humidity)
+
+        if rsl_list:
+            avg_rsl = round(sum(rsl_list) / len(rsl_list), 1)
+            min_rsl = round(min(rsl_list), 1)
+            log_entry = {
+                "timestamp": now_unix,
+                "rsl_values": [round(r, 1) for r in rsl_list],
+                "average_rsl": avg_rsl,
+                "min_rsl": min_rsl
+            }
+
+            log_doc = db.collection("inventory_logs").document(fruit)
+            old_logs = log_doc.get().to_dict() or {}
+            logs = old_logs.get("log", [])
+            logs.append(log_entry)
+            if len(logs) > 30:
+                logs = logs[-30:]
+            log_doc.set({"log": logs})
+
         for idx, rsl in enumerate(rsl_list):
             if rsl <= 6:
-                readable_ts = datetime.fromtimestamp(data["timestamps"][idx], timezone.utc).isoformat()
+                readable_ts = datetime.fromtimestamp(timestamps[idx], timezone.utc).isoformat()
                 alerts.append(f"RSL alert: {fruit} placed at {readable_ts} is near spoilage ({rsl:.1f}h left)")
-
-    doc_ref.set(inventory_data)
 
     token_doc = db.collection("app").document("tokens").get()
     tokens = token_doc.to_dict().get("tokens", []) if token_doc.exists else []
@@ -195,11 +222,9 @@ def process_image(path):
 
     logging.info("Processing completed. Alerts sent.")
 
-
 @app.route('/')
 def home():
     return '✅ Fruit Monitor Server is running!'
-
 
 # Run app
 if __name__ == '__main__':
